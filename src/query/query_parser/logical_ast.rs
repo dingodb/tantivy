@@ -2,7 +2,7 @@ use std::fmt;
 use std::ops::Bound;
 
 use crate::query::Occur;
-use crate::schema::{Term, Type};
+use crate::schema::{Field, Term, Type};
 use crate::Score;
 
 #[derive(Clone)]
@@ -21,6 +21,10 @@ pub enum LogicalLiteral {
     },
     Set {
         elements: Vec<Term>,
+    },
+    Regex {
+        field: Field,
+        regex_str: String,
     },
     All,
 }
@@ -119,6 +123,9 @@ impl fmt::Debug for LogicalLiteral {
                     }
                 }
                 write!(formatter, "]")
+            }
+            LogicalLiteral::Regex { ref regex_str, .. } => {
+                write!(formatter, "({regex_str:?})")
             }
             LogicalLiteral::All => write!(formatter, "*"),
         }

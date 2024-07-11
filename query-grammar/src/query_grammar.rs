@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::iter::once;
 
 use nom::branch::alt;
-use nom::bytes::complete::tag;
+use nom::bytes::complete::{tag, take_until};
 use nom::character::complete::{
     anychar, char, digit1, multispace0, multispace1, none_of, one_of, satisfy, u32,
 };
@@ -345,12 +345,25 @@ fn exists_infallible(inp: &str) -> JResult<&str, UserInputAst> {
     Ok((inp, (exists, Vec::new())))
 }
 
+fn regex(inp: &str) -> IResult<&str, UserInputLeaf> {
+    map(
+        preceded(
+            tuple((multispace0, tag("RE"), multispace1)),
+            delimited(tuple((char('['), multispace0)), take_until("]"), char(']')),
+        ),
+        |regex_str: &str| UserInputLeaf::Regex {
+            field: None,
+            regex_str: regex_str.to_string(),
+        },
+    )(inp)
+}
+
 fn literal(inp: &str) -> IResult<&str, UserInputAst> {
     // * alone is already parsed by our caller, so if `exists` succeed, we can be confident
     // something (a field name) got parsed before
     alt((
         map(
-            tuple((opt(field_name), alt((range, set, exists, term_or_phrase)))),
+            tuple((opt(field_name), alt((regex, range, set, exists, term_or_phrase)))),
             |(field_name, leaf): (Option<String>, UserInputLeaf)| leaf.set_field(field_name).into(),
         ),
         term_group,

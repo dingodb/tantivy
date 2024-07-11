@@ -14,8 +14,7 @@ use crate::index::Index;
 use crate::json_utils::convert_to_fast_value_and_append_to_json_term;
 use crate::query::range_query::{is_type_valid_for_fastfield_range_query, RangeQuery};
 use crate::query::{
-    AllQuery, BooleanQuery, BoostQuery, EmptyQuery, FuzzyTermQuery, Occur, PhrasePrefixQuery,
-    PhraseQuery, Query, TermQuery, TermSetQuery,
+    AllQuery, BooleanQuery, BoostQuery, EmptyQuery, FuzzyTermQuery, Occur, PhrasePrefixQuery, PhraseQuery, Query, RegexQuery, TermQuery, TermSetQuery
 };
 use crate::schema::{
     Facet, FacetParseError, Field, FieldType, IndexRecordOption, IntoIpv6Addr, JsonObjectOptions,
@@ -839,6 +838,36 @@ impl QueryParser {
                 let logical_ast = LogicalAst::Leaf(Box::new(LogicalLiteral::Set { elements }));
                 (Some(logical_ast), errors)
             }
+            UserInputLeaf::Regex {
+                field: full_field_opt,
+                regex_str,
+            } => {
+                let full_path = try_tuple!(full_field_opt.ok_or_else(|| {
+                    QueryParserError::UnsupportedQuery(
+                        "Regex query need to target a specific field.".to_string(),
+                    )
+                }));
+
+                let mut errors = Vec::new();
+                let (field, _json_path) = try_tuple!(self
+                    .split_full_path(&full_path)
+                    .ok_or_else(|| QueryParserError::FieldDoesNotExist(full_path.clone())));
+
+                let decode_retex_str = match BASE64.decode(regex_str) {
+                    Ok(decode_bytes) => String::from_utf8(decode_bytes).unwrap(),
+                    Err(err) => {
+                        errors.push(QueryParserError::ExpectedBase64(err));
+                        return (None, errors);
+                    }
+                };
+
+                let logical_ast = LogicalAst::Leaf(Box::new(LogicalLiteral::Regex {
+                    field,
+                    regex_str: decode_retex_str,
+                }));
+
+                (Some(logical_ast), errors)
+            },
             UserInputLeaf::Exists { .. } => (
                 None,
                 vec![QueryParserError::UnsupportedQuery(
@@ -893,6 +922,13 @@ fn convert_literal_to_query(
             field, value_type, &lower, &upper,
         )),
         LogicalLiteral::Set { elements, .. } => Box::new(TermSetQuery::new(elements)),
+        LogicalLiteral::Regex { field, regex_str } => {
+            let regex_query = RegexQuery::from_pattern(&regex_str, field);
+            match regex_query {
+                Ok(regex_query) => Box::new(regex_query),
+                Err(_) => Box::new(EmptyQuery),
+            }
+        }
         LogicalLiteral::All => Box::new(AllQuery),
     }
 }

@@ -19,6 +19,10 @@ pub enum UserInputLeaf {
     Exists {
         field: String,
     },
+    Regex {
+        field: Option<String>,
+        regex_str: String,
+    },
 }
 
 impl UserInputLeaf {
@@ -42,6 +46,7 @@ impl UserInputLeaf {
             UserInputLeaf::Exists { field: _ } => UserInputLeaf::Exists {
                 field: field.expect("Exist query without a field isn't allowed"),
             },
+            UserInputLeaf::Regex { field: _, regex_str, } => UserInputLeaf::Regex { field, regex_str },
         }
     }
 
@@ -102,6 +107,14 @@ impl Debug for UserInputLeaf {
             UserInputLeaf::All => write!(formatter, "*"),
             UserInputLeaf::Exists { field } => {
                 write!(formatter, "\"{field}\":*")
+            }
+            UserInputLeaf::Regex { field, regex_str } => {
+                if let Some(ref field) = field {
+                    write!(formatter, "\"{field}\": ")?;
+                }
+                write!(formatter, "RE [")?;
+                write!(formatter, "\"{regex_str}\": ")?;
+                write!(formatter, "]")
             }
         }
     }

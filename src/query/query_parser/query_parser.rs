@@ -2,6 +2,7 @@ use std::net::{AddrParseError, IpAddr};
 use std::num::{ParseFloatError, ParseIntError};
 use std::ops::Bound;
 use std::str::{FromStr, ParseBoolError};
+use std::string::FromUtf8Error;
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
@@ -14,7 +15,8 @@ use crate::index::Index;
 use crate::json_utils::convert_to_fast_value_and_append_to_json_term;
 use crate::query::range_query::{is_type_valid_for_fastfield_range_query, RangeQuery};
 use crate::query::{
-    AllQuery, BooleanQuery, BoostQuery, EmptyQuery, FuzzyTermQuery, Occur, PhrasePrefixQuery, PhraseQuery, Query, RegexQuery, TermQuery, TermSetQuery
+    AllQuery, BooleanQuery, BoostQuery, EmptyQuery, FuzzyTermQuery, Occur, PhrasePrefixQuery,
+    PhraseQuery, Query, RegexQuery, TermQuery, TermSetQuery,
 };
 use crate::schema::{
     Facet, FacetParseError, Field, FieldType, IndexRecordOption, IntoIpv6Addr, JsonObjectOptions,
@@ -45,6 +47,8 @@ pub enum QueryParserError {
     /// base64.
     #[error("Expected base64: '{0:?}'")]
     ExpectedBase64(#[from] base64::DecodeError),
+    #[error("Failed to convert utf8 : '{0:?}'")]
+    Utf8Error(#[from] FromUtf8Error),
     /// The query contains a term for a `f64`-field, but the value
     /// is not a f64.
     #[error("Invalid query: Only excluding terms given")]
@@ -854,7 +858,16 @@ impl QueryParser {
                     .ok_or_else(|| QueryParserError::FieldDoesNotExist(full_path.clone())));
 
                 let decode_retex_str = match BASE64.decode(regex_str) {
-                    Ok(decode_bytes) => String::from_utf8(decode_bytes).unwrap(),
+                    Ok(decode_bytes) => {
+                        let decode_retex_str = match String::from_utf8(decode_bytes) {
+                            Ok(decode_retex_str) => decode_retex_str,
+                            Err(err) => {
+                                errors.push(QueryParserError::Utf8Error(err));
+                                return (None, errors);
+                            }
+                        };
+                        decode_retex_str
+                    }
                     Err(err) => {
                         errors.push(QueryParserError::ExpectedBase64(err));
                         return (None, errors);
@@ -867,7 +880,7 @@ impl QueryParser {
                 }));
 
                 (Some(logical_ast), errors)
-            },
+            }
             UserInputLeaf::Exists { .. } => (
                 None,
                 vec![QueryParserError::UnsupportedQuery(
